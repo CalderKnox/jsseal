@@ -18,13 +18,36 @@ npx jsseal probe 样本.js
 npx jsseal 样本.js -o out.js --report r.json
 ```
 
-**源码方式**（开发/贡献者；native 引擎需本地编译）：
+> **npm 包内不含 native 引擎二进制。** 0.6.0 发布的 `@jsseal/engine-native` tarball
+> 只含 `dist/`（构建后的 JS 绑定），没有 `native/jsseal_engine.node`。因此 npm 安装后
+> 运行时探测 native 失败，会**静默降级到 wasm 后端**（quickjs-emscripten）。
+> 需要 native 后端请使用下方源码方式本地编译。
+
+**源码方式**（开发/贡献者；native 引擎需本地编译，构建后为默认后端）：
 
 ```bash
 npm install && npx tsc -b && bash engine/build.sh && npm test
 node packages/cli/dist/index.js probe samples/obfuscator-io.js
 node packages/cli/dist/index.js samples/obfuscator-io.js -o out.js --report r.json
 ```
+
+**后端与解混淆质量差异（0.6.0 实测，不构成性能或还原度承诺）**：
+
+两个后端跑的是同一套环境封闭 + 锚库验证管线，`final check: PASS` 只保证**行为等价**，
+不保证还原程度相同。以 `samples/obfuscator-io.js`（20240 B）为例：
+
+| 后端 | 获取方式 | 输出大小 | 质量告警 |
+|---|---|---|---|
+| native | 源码构建（`bash engine/build.sh`） | 8330 B | 无 |
+| wasm | npm 安装，或源码构建下 `--backend quickjs` | 6987 B | 「字符串池还原度极低（查表仅 0 条，池规模 1 个函数）」 |
+
+数值随样本与版本变化，以上仅记录本版本实测。WARNING 由 CLI 的还原度启发式打印：
+「字符串池还原度极低」表示 inline-decoder 被锚库回滚、产物仍含编码字符串，需要人工复核
+（PASS 本身不代表还原成功）。源码构建下可用 `--backend quickjs` 强制 wasm 后端复现对比。
+此外，trace/污点/强制分支等高级特性仅 native 后端提供，wasm 下 `--forced-branches` 不生效。
+
+> 如需与源码构建等效的解混淆质量，需要后续单独处理 native 产物分发（当前未随 npm 发布）；
+> 短期请使用源码构建。
 
 **浏览器演练场**（wasm 后端，完整管线在浏览器内运行）：
 
@@ -33,28 +56,6 @@ npm run -w @jsseal/web start    # 构建 + 本地服务 → http://127.0.0.1:864
 ```
 
 ![playground](docs/images/playground.png)
-
-**安装（npm 已发布 0.6.0）**：
-
-```bash
-npm install @jsseal/cli
-npx jsseal probe 样本.js
-npx jsseal 样本.js -o out.js --report r.json
-```
-
-**源码方式**（开发/贡献者；native 引擎需本地编译）：
-
-```bash
-npm install && npx tsc -b && bash engine/build.sh && npm test
-node packages/cli/dist/index.js probe samples/obfuscator-io.js
-node packages/cli/dist/index.js samples/obfuscator-io.js -o out.js --report r.json
-```
-
-**浏览器演练场**（wasm 后端，完整管线在浏览器内运行）：
-
-```bash
-npm run -w @jsseal/web start    # 构建 + 本地服务 → http://127.0.0.1:8642
-```
 
 ## 文档
 
@@ -111,7 +112,7 @@ npm run -w @jsseal/web start    # 构建 + 本地服务 → http://127.0.0.1:864
 ```
 engine/quickjs/   引擎 fork（种子磁带/虚拟时钟/gas/trace/污点/分支强制）
 packages/
-  engine-native/  native 引擎绑定（默认后端）
+  engine-native/  native 引擎绑定（源码构建下为默认后端；npm 分发暂不含二进制）
   runtime/        封闭内核（sealing prelude + 三后端）
   anchors/        锚库（行为恒等 + 健康哨兵 + 分支指纹迁移）
   detector/       家族识别 + 三件套提取

@@ -44,10 +44,17 @@
 
 ### 1.2 后端
 
-- **quickjs**（默认）：quickjs-emscripten（wasm，零 native 依赖，线性内存硬隔离）。
+- **quickjs**（wasm；npm 分发态与无 native 构建时的默认）：quickjs-emscripten（wasm，零 native 依赖，线性内存硬隔离）。
   `setMemoryLimit + setInterruptHandler`（超时）；句柄必须显式 dispose（evalCode/setProp
   所有权语义），否则 runtime dispose 断言失败
+- **native**：`@jsseal/engine-native`（quickjs-ng fork，N-API），源码构建
+  （`bash engine/build.sh`）后为默认后端
 - **nodevm**（开发调试）：node:vm 同一 prelude；锚库比较必须固定在同一后端内
+
+> **发布态说明**：npm 分发的 `@jsseal/engine-native` 0.6.0 tarball 只含 `dist/`，
+> 不含 `native/jsseal_engine.node`；因此 `npm install` 用户运行时 `isEngineAvailable()`
+> 探测失败，实际使用 wasm 后端。native 是源码构建后的默认后端——两者 `final check`
+> 均为 PASS（行为等价），但解混淆质量可能不同（见 README「后端与解混淆质量差异」）。
 
 ### 1.3 已踩坑记录
 
@@ -159,7 +166,7 @@ strip-antitamper → fold-constants → member-normalize → inline-decoder
 | 引擎级种子拦截 | `JSContext.jsseal_seeds`：mode + 四类磁带（random/date/time/crypto）。拦截点：`js_math_random`（xorshift64star）、`date_now(ctx)`（含 `new Date()` 无参构造与 `Date.now()`）、`js_perf_now`、原生 crypto（`JS_AddSealCrypto`：C 实现 getRandomValues/randomUUID，独立 crypto 磁带） |
 | C API | `JS_SetSealSeedMode / JS_SetSealSeedTape / JS_GetSealSeedTape / JS_GetSealSeedConsumed / JS_GetSealSeedExhausted / JS_AddSealCrypto` |
 | **guest 不可觉察** | 引擎级拦截不触碰 JS 层属性——`Math.random.toString()` 返回 `function random() {[native code]}`、`delete Math.random` 无法恢复真实随机（实测验证）。prelude 的 JS 覆盖在 native 后端自动让位（`engineSeeds` 开关） |
-| 默认后端切换 | CLI/core 默认 native（`isEngineAvailable()` 探测，失败自动降级 quickjs-wasm） |
+| 默认后端切换 | 源码构建后 CLI/core 默认 native（`isEngineAvailable()` 探测，失败自动降级 quickjs-wasm；npm 分发无二进制，见 §1.2 发布态说明） |
 
 ### 双层拦截职责（native 后端）
 
